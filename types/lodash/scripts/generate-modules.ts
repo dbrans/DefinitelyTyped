@@ -9,23 +9,31 @@ import * as path from "path";
 main().catch(console.error);
 
 async function main() {
-    const all = new Set(allModuleNames());
+    const all = allModuleNames();
+    const allSet = new Set(allModuleNames());
     const notOnNpm = new Set(modulesNotOnNpm());
     for (const n of notOnNpm) {
-        if (!all.has(n)) {
+        if (!allSet.has(n)) {
             throw new Error(n);
         }
     }
+
+    const lodashEsDir = path.join("..", "..", "lodash-es");
+
+    // Generate lodash-es index and tsconfig
+    fs.writeFileSync(path.join(lodashEsDir, "index.d.ts"), `export {\n    ${all.join(",\n    ")}\n} from "lodash";\n`);
+    fs.writeFileSync(path.join(lodashEsDir, "tsconfig.json"), lodashEsTsconfig(all));
 
     for (const module of all) {
         console.log(module);
 
         // Generate local module
-        const localDir = path.join("..", module);
-        ensureDir(localDir);
-        fs.writeFileSync(path.join(localDir, "index.d.ts"), `import { ${module} } from "../index";\nexport = ${module};\n`);
+        fs.writeFileSync(path.join("..", `${module}.d.ts`), `import { ${module} } from "../index";\nexport = ${module};\n`);
 
-        // Generate non-local module
+        // Generate lodash-es module
+        fs.writeFileSync(path.join(lodashEsDir, `${module}.d.ts`), `import { ${module} } from "lodash";\nexport default ${module};\n`);
+
+        // Generate `lodash.foo` module
         if (!notOnNpm.has(module)) {
             const dir = path.join("..", "..", `lodash.${module.toLowerCase()}`);
             ensureDir(dir);
@@ -61,27 +69,40 @@ export = ${moduleName};
 `.trim() + "\n";
 }
 
-function tsconfig() {
-    return JSON.stringify({
-        "files": [
-            "index.d.ts"
+function compilerOptions() {
+    return {
+        "module": "commonjs",
+        "lib": [
+            "es6"
         ],
-        "compilerOptions": {
-            "module": "commonjs",
-            "lib": [
-                "es6"
-            ],
-            "noImplicitAny": true,
-            "noImplicitThis": true,
-            "strictNullChecks": false,
-            "baseUrl": "../",
-            "typeRoots": [
-                "../"
-            ],
-            "types": [],
-            "noEmit": true,
-            "forceConsistentCasingInFileNames": true
-        }
+        "noImplicitAny": true,
+        "noImplicitThis": true,
+        "strictNullChecks": false,
+        "baseUrl": "../",
+        "typeRoots": [
+            "../"
+        ],
+        "types": [],
+        "noEmit": true,
+        "forceConsistentCasingInFileNames": true
+    };
+};
+
+function lodashEsTsconfig(moduleNames: string[]): string {
+    return JSON.stringify({
+        compilerOptions: compilerOptions(),
+        files: [
+            "index.d.ts",
+            "lodash-es-tests.ts",
+            ...moduleNames.map(m => `${m}.d.ts`),
+        ]
+    }, undefined, 4);
+}
+
+function tsconfig(): string {
+    return JSON.stringify({
+        compilerOptions: compilerOptions(),
+        files: ["index.d.ts"],
     }, undefined, 4);
 }
 
